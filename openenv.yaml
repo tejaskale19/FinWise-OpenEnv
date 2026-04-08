@@ -1,0 +1,86 @@
+name: finwise-openenv
+version: "1.0.0"
+description: >
+  Real-world OpenEnv environment for training and evaluating LLM agents
+  on Indian retail portfolio advisory tasks. An AI agent acts as a wealth
+  advisor helping investors with portfolio rebalancing, SIP optimization,
+  sector diversification, and crisis management across NSE-listed equities
+  and mutual funds.
+
+entrypoint: finwise_env.env:FinWiseEnv
+
+tags:
+  - finance
+  - portfolio
+  - india
+  - wealth-management
+  - openenv
+  - real-world
+
+tasks:
+  - name: diversify_sector_easy
+    difficulty: easy
+    description: >
+      Reduce IT sector overexposure from 70% to below 40%.
+      Investor has ₹5,00,000 portfolio with 70% concentrated in IT stocks.
+      Agent must diversify into other sectors and/or mutual funds within 8 steps.
+    max_steps: 8
+    success_threshold: 0.80
+
+  - name: retirement_goal_medium
+    difficulty: medium
+    description: >
+      Optimize a 25-year-old's portfolio to achieve ₹1 Crore retirement corpus in 15 years.
+      Current SIP of ₹3,000/month is insufficient. Agent must increase SIP,
+      allocate to equity mutual funds, and rebalance sectors within 10 steps.
+    max_steps: 10
+    success_threshold: 0.75
+
+  - name: crash_protection_hard
+    difficulty: hard
+    description: >
+      CRISIS: Banking sector crash (-22%). Portfolio has 45% banking exposure
+      and 18% drawdown. Investor needs ₹2,00,000 liquidity in 6 months for home loan.
+      Agent must reduce banking exposure, build liquidity, and preserve capital
+      while maintaining long-term growth within 12 steps.
+    max_steps: 12
+    success_threshold: 0.70
+
+observation_space:
+  type: structured
+  description: >
+    Typed Pydantic model (PortfolioObservation) containing:
+    cash, stock holdings (8 NSE stocks), mutual fund value, monthly SIP,
+    sector exposure (5 sectors), risk profile, risk score, goal progress,
+    projected corpus, NIFTY trend, drawdown, available actions.
+
+action_space:
+  type: structured
+  description: >
+    Typed Pydantic model (PortfolioAction) with action_type from:
+    [buy_stock, sell_stock, increase_sip, decrease_sip,
+     buy_mutual_fund, sell_mutual_fund, rebalance_sector, hold]
+    plus optional asset, amount_inr, target_weight, reasoning fields.
+
+reward:
+  type: dense
+  range: [-1.0, 1.0]
+  description: >
+    Composite reward combining: diversification improvement (30%),
+    corpus growth (30%), risk reduction (20%), liquidity safety (20%).
+    Penalizes sector overconcentration, excessive churn, and cash depletion.
+
+interface:
+  reset: POST /reset
+  step: POST /step
+  state: POST /state
+  health: GET /health
+
+metadata:
+  domain: fintech
+  country: India
+  market: NSE (National Stock Exchange)
+  currency: INR
+  author: FinWise Team
+  license: MIT
+  huggingface_space: true
