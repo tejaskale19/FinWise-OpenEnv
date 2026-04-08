@@ -1,3 +1,13 @@
+---
+title: FinWise OpenEnv
+emoji: 🚀
+colorFrom: blue
+colorTo: green
+sdk: docker
+app_file: app.py
+pinned: false
+---
+
 # FinWise OpenEnv
 
 FinWise OpenEnv is a real-world benchmark for training and evaluating LLM agents on Indian retail portfolio advisory decisions.
@@ -29,7 +39,7 @@ It tests whether an agent can do more than single-turn Q and A: the agent must m
 
 Replace with your deployed public Space URL:
 
-https://huggingface.co/spaces/<your-username>/finwise-openenv
+https://huggingface.co/spaces/ktejas19/Finwise
 
 ## OpenEnv Contract
 
@@ -206,11 +216,11 @@ Run before submission:
 
 GitHub repository URL placeholder:
 
-https://github.com/<your-username>/finwise-openenv
+https://github.com/tejaskale19/FinWise-OpenEnv
 
 Hugging Face Space URL placeholder:
 
-https://huggingface.co/spaces/<your-username>/finwise-openenv
+https://huggingface.co/spaces/ktejas19/Finwise
 
 ## License
 
