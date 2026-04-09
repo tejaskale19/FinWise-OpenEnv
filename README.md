@@ -135,7 +135,7 @@ Example (Windows cmd):
 
 set API_BASE_URL=https://router.huggingface.co/v1
 set MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
-set HF_TOKEN=hf_xxxxxxxxxxxxxxxxx
+set HF_TOKEN=YOUR_TOKEN_HERE
 set LOCAL_IMAGE_NAME=
 
 ## Running Inference
@@ -171,7 +171,7 @@ docker build -t finwise-openenv .
 
 Run container:
 
-docker run -p 7860:7860 -e HF_TOKEN=hf_xxxxxxxxxxxxxxxxx -e MODEL_NAME=Qwen/Qwen2.5-72B-Instruct finwise-openenv
+docker run -p 7860:7860 -e HF_TOKEN=YOUR_TOKEN_HERE -e MODEL_NAME=Qwen/Qwen2.5-72B-Instruct finwise-openenv
 
 ## Hugging Face Docker Space Deployment
 

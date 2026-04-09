@@ -22,7 +22,7 @@ docker build -t finwise-openenv .
 
 Run:
 
-docker run -p 7860:7860 -e HF_TOKEN=hf_xxxxxxxxxxxxxxxxx -e MODEL_NAME=Qwen/Qwen2.5-72B-Instruct finwise-openenv
+docker run -p 7860:7860 -e HF_TOKEN=YOUR_TOKEN_HERE -e MODEL_NAME=Qwen/Qwen2.5-72B-Instruct finwise-openenv
 
 Check endpoints while container is running:
 

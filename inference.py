@@ -11,7 +11,7 @@ REQUIRED LOG FORMAT (must not deviate):
 Usage:
     set API_BASE_URL=https://router.huggingface.co/v1
     set MODEL_NAME=Qwen/Qwen2.5-72B-Instruct
-    set HF_TOKEN=hf_xxxxxxxxxxxxx
+    set HF_TOKEN=YOUR_TOKEN_HERE
   python inference.py
 """
 
@@ -41,6 +41,10 @@ MAX_STEPS = 10
 TEMPERATURE = 0.3
 MAX_TOKENS = 512
 SUCCESS_SCORE_THRESHOLD = 0.70
+
+
+def _clamp_final_score(score: float) -> float:
+    return max(0.01, min(0.99, float(score)))
 
 
 # ─────────────────────────────────────────────
@@ -213,7 +217,7 @@ def run_task(client: OpenAI, task_name: str) -> float:
 
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.0
+    score = 0.01
     success = False
     result = None
 
@@ -254,12 +258,12 @@ def run_task(client: OpenAI, task_name: str) -> float:
 
         # Compute final score from terminal grader
         if result and result.info:
-            score = result.info.get("terminal_score", 0.0)
+            score = result.info.get("terminal_score", 0.01)
             success = bool(result.info.get("task_success", score >= SUCCESS_SCORE_THRESHOLD))
         else:
-            score = 0.0
+            score = 0.01
             success = False
-        score = max(0.0, min(1.0, score))
+        score = _clamp_final_score(score)
 
     except Exception:
         success = False
@@ -267,7 +271,7 @@ def run_task(client: OpenAI, task_name: str) -> float:
     finally:
         log_end(success=success, steps=steps_taken, rewards=rewards)
 
-    return score
+    return _clamp_final_score(score)
 
 
 # ─────────────────────────────────────────────

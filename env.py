@@ -129,6 +129,7 @@ class FinWiseEnv:
 
         # Check done: max steps reached or task success
         terminal_score, score_explanation = grade_task(self.task_name, self._portfolio)
+        terminal_score = max(0.01, min(0.99, float(terminal_score)))
         task_success = terminal_score >= self._task.success_threshold
         max_steps_reached = self._step_count >= self._task.max_steps
         self._done = task_success or max_steps_reached

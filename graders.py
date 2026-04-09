@@ -88,6 +88,7 @@ def grade_diversify_sector(portfolio_state: Dict) -> Tuple[float, str]:
     mf_bonus = clamp(0.05 * (mf_ratio / 0.2))  # up to 0.05 bonus if 20% in MF
 
     final_score = clamp(primary + diversity_bonus + mf_bonus)
+    final_score = max(0.01, min(0.99, final_score))
     explanation = (
         f"IT exposure={it_weight:.1%} ({label}). "
         f"Diversity bonus={diversity_bonus:.2f}. MF bonus={mf_bonus:.2f}. "
@@ -175,6 +176,7 @@ def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
     diversification_bonus = 0.05 if it < 0.35 else 0.0
 
     final_score = clamp(primary + sip_bonus + mf_bonus + diversification_bonus)
+    final_score = max(0.01, min(0.99, final_score))
     explanation = (
         f"Projected corpus=₹{projected:,.0f} vs target=₹{target:,.0f} ({ratio:.1%}). "
         f"SIP=₹{sip:,}/mo (bonus={sip_bonus:.2f}). "
@@ -247,6 +249,7 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
         + liquidity_score * 0.35
         + banking_score * 0.25
     )
+    final_score = max(0.01, min(0.99, final_score))
 
     explanation = (
         f"Capital preservation: drawdown={drawdown:.1%} → score={preservation_score:.2f} (w=0.40). "
@@ -344,10 +347,13 @@ def compute_step_reward(
 
 def grade_task(task_name: str, portfolio_state: Dict) -> Tuple[float, str]:
     if task_name == "diversify_sector_easy":
-        return grade_diversify_sector(portfolio_state)
+        score, explanation = grade_diversify_sector(portfolio_state)
     elif task_name == "retirement_goal_medium":
-        return grade_retirement_goal(portfolio_state)
+        score, explanation = grade_retirement_goal(portfolio_state)
     elif task_name == "crash_protection_hard":
-        return grade_crash_protection(portfolio_state)
+        score, explanation = grade_crash_protection(portfolio_state)
     else:
         raise ValueError(f"Unknown task: {task_name}")
+
+    score = max(0.01, min(0.99, float(score)))
+    return score, explanation

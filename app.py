@@ -153,13 +153,17 @@ async def step(request: StepRequest):
     if result.done:
         _sessions.pop(request.session_id, None)
 
+    info = dict(result.info)
+    if "terminal_score" in info:
+        info["terminal_score"] = max(0.01, min(0.99, float(info["terminal_score"])))
+
     return {
         "session_id": request.session_id,
         "observation": result.observation.model_dump(),
         "reward": result.reward,
         "reward_breakdown": result.reward_breakdown.model_dump(),
         "done": result.done,
-        "info": result.info,
+        "info": info,
     }
 
 
