@@ -18,7 +18,7 @@ from models import (
     StockHoldings,
 )
 from tasks import TASK_REGISTRY, TaskDefinition
-from graders import compute_step_reward, grade_task, clamp_strict_score
+from finwise_env.graders import compute_step_reward, grade_task, strict_score
 
 
 # Stock → Sector mapping
@@ -61,6 +61,20 @@ class FinWiseEnv:
 
     ENV_NAME = "finwise-openenv"
     VERSION = "1.0.0"
+
+    @staticmethod
+    def _safe_float(value: Any, default: float = 0.0) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            return default
+        if not math.isfinite(numeric):
+            return default
+        return numeric
+
+    @staticmethod
+    def _safe_dict(value: Any) -> Dict:
+        return value if isinstance(value, dict) else {}
 
     def __init__(self, task_name: str = "diversify_sector_easy"):
         if task_name not in TASK_REGISTRY:
@@ -129,7 +143,7 @@ class FinWiseEnv:
 
         # Check done: max steps reached or task success
         terminal_score, score_explanation = grade_task(self.task_name, self._portfolio)
-        terminal_score = clamp_strict_score(terminal_score)
+        terminal_score = strict_score(terminal_score)
         task_success = terminal_score >= self._task.success_threshold
         max_steps_reached = self._step_count >= self._task.max_steps
         self._done = task_success or max_steps_reached
@@ -298,8 +312,11 @@ class FinWiseEnv:
 
     def _compute_total_value(self) -> float:
         p = self._portfolio
-        stock_total = sum(p["stocks"].values())
-        return p["cash_inr"] + stock_total + p.get("mutual_fund_value_inr", 0)
+        stocks = self._safe_dict(p.get("stocks", {}))
+        stock_total = sum(self._safe_float(v, 0.0) for v in stocks.values())
+        cash = self._safe_float(p.get("cash_inr", 0.0), 0.0)
+        mf = self._safe_float(p.get("mutual_fund_value_inr", 0.0), 0.0)
+        return max(0.0, cash + stock_total + mf)
 
     def _recompute_metrics(self) -> None:
         p = self._portfolio
@@ -308,32 +325,34 @@ class FinWiseEnv:
 
         # Recompute sector exposure
         sector_values: Dict[str, float] = {s: 0.0 for s in VALID_SECTORS}
-        for stock, value in p["stocks"].items():
+        stocks = self._safe_dict(p.get("stocks", {}))
+        for stock, value in stocks.items():
             sector = STOCK_SECTOR_MAP.get(stock, "Other")
             if sector in sector_values:
-                sector_values[sector] += value
-        investable = total - p["cash_inr"]
+                sector_values[sector] += self._safe_float(value, 0.0)
+        investable = total - self._safe_float(p.get("cash_inr", 0.0), 0.0)
         if investable > 0:
             p["sector_exposure"] = {s: v / investable for s, v in sector_values.items()}
         else:
             p["sector_exposure"] = {s: 0.0 for s in VALID_SECTORS}
 
         # Recompute risk score: weighted by sector concentration and drawdown
-        it = p["sector_exposure"].get("IT", 0)
-        banking = p["sector_exposure"].get("Banking", 0)
+        sector_exposure = self._safe_dict(p.get("sector_exposure", {}))
+        it = self._safe_float(sector_exposure.get("IT", 0.0), 0.0)
+        banking = self._safe_float(sector_exposure.get("Banking", 0.0), 0.0)
         concentration_risk = (it + banking) / 2.0
-        drawdown = p.get("max_drawdown", 0.0)
-        p["risk_score"] = min(1.0, concentration_risk * 0.6 + drawdown * 0.4)
+        drawdown = self._safe_float(p.get("max_drawdown", 0.0), 0.0)
+        p["risk_score"] = max(0.0, min(1.0, concentration_risk * 0.6 + drawdown * 0.4))
 
         # Recompute goal progress
-        target = p.get("target_corpus_inr", 1)
+        target = self._safe_float(p.get("target_corpus_inr", 1.0), 1.0)
         projected = self._project_corpus(
             total,
-            p.get("sip_monthly_inr", 0),
-            p.get("investment_horizon_years", 10)
+            self._safe_float(p.get("sip_monthly_inr", 0.0), 0.0),
+            int(max(0, self._safe_float(p.get("investment_horizon_years", 10), 10.0)))
         )
         p["projected_corpus_inr"] = projected
-        p["goal_progress"] = min(1.0, projected / max(target, 1))
+        p["goal_progress"] = max(0.0, min(1.0, projected / max(target, 1)))
 
     def _project_corpus(self, current: float, monthly_sip: float, years: int) -> float:
         months = years * 12
@@ -352,39 +371,39 @@ class FinWiseEnv:
 
     def _build_observation(self, last_action_result: Optional[str] = None) -> PortfolioObservation:
         p = self._portfolio
-        sector = p.get("sector_exposure", {})
-        stocks_raw = p.get("stocks", {})
+        sector = self._safe_dict(p.get("sector_exposure", {}))
+        stocks_raw = self._safe_dict(p.get("stocks", {}))
 
         return PortfolioObservation(
-            cash_inr=round(p["cash_inr"], 2),
-            total_portfolio_value_inr=round(p["total_portfolio_value_inr"], 2),
+            cash_inr=round(max(0.0, self._safe_float(p.get("cash_inr", 0.0), 0.0)), 2),
+            total_portfolio_value_inr=round(max(0.0, self._safe_float(p.get("total_portfolio_value_inr", 0.0), 0.0)), 2),
             stocks=StockHoldings(
-                RELIANCE=round(stocks_raw.get("RELIANCE", 0), 2),
-                TCS=round(stocks_raw.get("TCS", 0), 2),
-                INFY=round(stocks_raw.get("INFY", 0), 2),
-                HDFCBANK=round(stocks_raw.get("HDFCBANK", 0), 2),
-                ICICIBANK=round(stocks_raw.get("ICICIBANK", 0), 2),
-                WIPRO=round(stocks_raw.get("WIPRO", 0), 2),
-                SUNPHARMA=round(stocks_raw.get("SUNPHARMA", 0), 2),
-                HINDUNILVR=round(stocks_raw.get("HINDUNILVR", 0), 2),
+                RELIANCE=round(max(0.0, self._safe_float(stocks_raw.get("RELIANCE", 0.0), 0.0)), 2),
+                TCS=round(max(0.0, self._safe_float(stocks_raw.get("TCS", 0.0), 0.0)), 2),
+                INFY=round(max(0.0, self._safe_float(stocks_raw.get("INFY", 0.0), 0.0)), 2),
+                HDFCBANK=round(max(0.0, self._safe_float(stocks_raw.get("HDFCBANK", 0.0), 0.0)), 2),
+                ICICIBANK=round(max(0.0, self._safe_float(stocks_raw.get("ICICIBANK", 0.0), 0.0)), 2),
+                WIPRO=round(max(0.0, self._safe_float(stocks_raw.get("WIPRO", 0.0), 0.0)), 2),
+                SUNPHARMA=round(max(0.0, self._safe_float(stocks_raw.get("SUNPHARMA", 0.0), 0.0)), 2),
+                HINDUNILVR=round(max(0.0, self._safe_float(stocks_raw.get("HINDUNILVR", 0.0), 0.0)), 2),
             ),
-            mutual_fund_value_inr=round(p.get("mutual_fund_value_inr", 0), 2),
-            sip_monthly_inr=round(p.get("sip_monthly_inr", 0), 2),
+            mutual_fund_value_inr=round(max(0.0, self._safe_float(p.get("mutual_fund_value_inr", 0.0), 0.0)), 2),
+            sip_monthly_inr=round(max(0.0, self._safe_float(p.get("sip_monthly_inr", 0.0), 0.0)), 2),
             sector_exposure=SectorExposure(
-                IT=round(sector.get("IT", 0), 4),
-                Banking=round(sector.get("Banking", 0), 4),
-                FMCG=round(sector.get("FMCG", 0), 4),
-                Pharma=round(sector.get("Pharma", 0), 4),
-                Energy=round(sector.get("Energy", 0), 4),
+                IT=round(max(0.0, min(1.0, self._safe_float(sector.get("IT", 0.0), 0.0))), 4),
+                Banking=round(max(0.0, min(1.0, self._safe_float(sector.get("Banking", 0.0), 0.0))), 4),
+                FMCG=round(max(0.0, min(1.0, self._safe_float(sector.get("FMCG", 0.0), 0.0))), 4),
+                Pharma=round(max(0.0, min(1.0, self._safe_float(sector.get("Pharma", 0.0), 0.0))), 4),
+                Energy=round(max(0.0, min(1.0, self._safe_float(sector.get("Energy", 0.0), 0.0))), 4),
             ),
             risk_profile=p.get("risk_profile", "moderate"),
-            risk_score=round(p.get("risk_score", 0.5), 4),
-            investment_horizon_years=p.get("investment_horizon_years", 10),
-            target_corpus_inr=p.get("target_corpus_inr", 0),
-            goal_progress=round(p.get("goal_progress", 0.0), 4),
-            projected_corpus_inr=round(p.get("projected_corpus_inr", 0), 2),
+            risk_score=round(max(0.0, min(1.0, self._safe_float(p.get("risk_score", 0.5), 0.5))), 4),
+            investment_horizon_years=int(max(0, self._safe_float(p.get("investment_horizon_years", 10), 10.0))),
+            target_corpus_inr=max(0.0, self._safe_float(p.get("target_corpus_inr", 0.0), 0.0)),
+            goal_progress=round(max(0.0, min(1.0, self._safe_float(p.get("goal_progress", 0.0), 0.0))), 4),
+            projected_corpus_inr=round(max(0.0, self._safe_float(p.get("projected_corpus_inr", 0.0), 0.0)), 2),
             nifty_trend=p.get("nifty_trend", "sideways"),
-            max_drawdown=round(p.get("max_drawdown", 0.0), 4),
+            max_drawdown=round(max(0.0, min(1.0, self._safe_float(p.get("max_drawdown", 0.0), 0.0))), 4),
             step_number=self._step_count,
             task_name=self.task_name,
             available_actions=VALID_ACTIONS,

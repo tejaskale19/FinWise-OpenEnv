@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from finwise_env.env import FinWiseEnv
-from finwise_env.graders import clamp_strict_score
+from finwise_env.graders import strict_score
 from finwise_env.models import PortfolioAction
 from finwise_env.tasks import ALL_TASK_NAMES
 
@@ -156,7 +156,7 @@ async def step(request: StepRequest):
 
     info = dict(result.info)
     if "terminal_score" in info:
-        info["terminal_score"] = clamp_strict_score(info["terminal_score"])
+        info["terminal_score"] = strict_score(info["terminal_score"])
 
     return {
         "session_id": request.session_id,

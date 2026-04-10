@@ -1,6 +1,5 @@
 """Compatibility package exposing FinWise OpenEnv symbols."""
 
-from finwise_env.env import FinWiseEnv
 from finwise_env.models import (
     PortfolioObservation,
     PortfolioAction,
@@ -21,3 +20,10 @@ __all__ = [
     "StockHoldings",
     "TaskDefinition",
 ]
+
+
+def __getattr__(name: str):
+    if name == "FinWiseEnv":
+        from finwise_env.env import FinWiseEnv
+        return FinWiseEnv
+    raise AttributeError(f"module 'finwise_env' has no attribute '{name}'")

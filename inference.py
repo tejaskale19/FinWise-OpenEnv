@@ -24,7 +24,7 @@ from typing import List, Optional, Tuple
 from openai import OpenAI
 
 from finwise_env.env import FinWiseEnv
-from finwise_env.graders import clamp_strict_score
+from finwise_env.graders import strict_score
 from finwise_env.models import PortfolioAction
 from finwise_env.tasks import ALL_TASK_NAMES
 
@@ -45,7 +45,7 @@ SUCCESS_SCORE_THRESHOLD = 0.70
 
 
 def _clamp_final_score(score: float) -> float:
-    return clamp_strict_score(score)
+    return strict_score(score)
 
 
 # ─────────────────────────────────────────────

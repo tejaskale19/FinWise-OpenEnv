@@ -14,16 +14,48 @@ import math
 # ─────────────────────────────────────────────────────────────
 
 def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
-    return max(lo, min(hi, value))
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return lo
+    if not math.isfinite(numeric):
+        return lo
+    return max(lo, min(hi, numeric))
 
 
 STRICT_SCORE_MIN = 0.001
 STRICT_SCORE_MAX = 0.999
+STRICT_SCORE_NONFINITE_FALLBACK = 0.5
+
+
+def _safe_mapping(value: object) -> Dict:
+    return value if isinstance(value, dict) else {}
+
+
+def _safe_number(value: object, default: float = 0.0) -> float:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return default
+    if not math.isfinite(numeric):
+        return default
+    return numeric
+
+
+def strict_score(score: float) -> float:
+    """Universal strict-safe task score clamp with NaN/inf protection."""
+    try:
+        numeric = float(score)
+    except (TypeError, ValueError):
+        return STRICT_SCORE_NONFINITE_FALLBACK
+    if not math.isfinite(numeric):
+        return STRICT_SCORE_NONFINITE_FALLBACK
+    return max(STRICT_SCORE_MIN, min(STRICT_SCORE_MAX, numeric))
 
 
 def clamp_strict_score(score: float) -> float:
-    """Clamp task scores to strict OpenEnv bounds: 0 < score < 1."""
-    return max(STRICT_SCORE_MIN, min(STRICT_SCORE_MAX, float(score)))
+    """Backward-compatible alias for strict score clamping."""
+    return strict_score(score)
 
 
 def linear_score(current: float, target: float, worst: float) -> float:
@@ -32,9 +64,9 @@ def linear_score(current: float, target: float, worst: float) -> float:
     Interpolates linearly between.
     """
     if abs(worst - target) < 1e-9:
-        return clamp_strict_score(1.0)
+        return strict_score(1.0)
     score = 1.0 - abs(current - target) / abs(worst - target)
-    return clamp_strict_score(clamp(score))
+    return strict_score(clamp(score))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -56,8 +88,9 @@ def grade_diversify_sector(portfolio_state: Dict) -> Tuple[float, str]:
 
     Also rewards secondary diversification across sectors.
     """
-    sector = portfolio_state.get("sector_exposure", {})
-    it_weight = sector.get("IT", 0.70)
+    state = _safe_mapping(portfolio_state)
+    sector = _safe_mapping(state.get("sector_exposure", {}))
+    it_weight = _safe_number(sector.get("IT", 0.70), 0.70)
 
     # Primary score: IT reduction
     if it_weight <= 0.30:
@@ -80,7 +113,7 @@ def grade_diversify_sector(portfolio_state: Dict) -> Tuple[float, str]:
         label = "no progress"
 
     # Secondary score: distribution across other sectors
-    other_sectors = [v for k, v in sector.items() if k != "IT"]
+    other_sectors = [_safe_number(v, 0.0) for k, v in sector.items() if k != "IT"]
     if other_sectors:
         # Reward balanced distribution (low std deviation across other sectors)
         avg = sum(other_sectors) / len(other_sectors)
@@ -91,12 +124,12 @@ def grade_diversify_sector(portfolio_state: Dict) -> Tuple[float, str]:
         diversity_bonus = 0.0
 
     # Penalty: mutual fund allocation bonus
-    mf_value = portfolio_state.get("mutual_fund_value_inr", 0)
-    total = portfolio_state.get("total_portfolio_value_inr", 1)
+    mf_value = _safe_number(state.get("mutual_fund_value_inr", 0), 0.0)
+    total = _safe_number(state.get("total_portfolio_value_inr", 1), 1.0)
     mf_ratio = mf_value / max(total, 1)
     mf_bonus = clamp(0.05 * (mf_ratio / 0.2))  # up to 0.05 bonus if 20% in MF
 
-    final_score = clamp_strict_score(clamp(primary + diversity_bonus + mf_bonus))
+    final_score = strict_score(clamp(primary + diversity_bonus + mf_bonus))
     explanation = (
         f"IT exposure={it_weight:.1%} ({label}). "
         f"Diversity bonus={diversity_bonus:.2f}. MF bonus={mf_bonus:.2f}. "
@@ -117,6 +150,11 @@ def _project_corpus(
     annual_return: float = 0.12
 ) -> float:
     """Project final corpus using standard SIP formula."""
+    current_value = _safe_number(current_value, 0.0)
+    monthly_sip = _safe_number(monthly_sip, 0.0)
+    years = int(max(0, _safe_number(years, 0.0)))
+    annual_return = _safe_number(annual_return, 0.12)
+
     months = years * 12
     monthly_rate = annual_return / 12
 
@@ -129,7 +167,10 @@ def _project_corpus(
     else:
         sip_fv = monthly_sip * months
 
-    return lump_fv + sip_fv
+    result = lump_fv + sip_fv
+    if not math.isfinite(result):
+        return 0.0
+    return result
 
 
 def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
@@ -149,14 +190,18 @@ def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
       - Adding mutual funds (up to 0.05)
       - Staying diversified (up to 0.05)
     """
-    total_value = portfolio_state.get("total_portfolio_value_inr", 0)
-    sip = portfolio_state.get("sip_monthly_inr", 3000)
-    horizon = portfolio_state.get("investment_horizon_years", 15)
-    target = portfolio_state.get("target_corpus_inr", 1_00_00_000)
-    mf_value = portfolio_state.get("mutual_fund_value_inr", 0)
+    state = _safe_mapping(portfolio_state)
+    total_value = _safe_number(state.get("total_portfolio_value_inr", 0), 0.0)
+    sip = _safe_number(state.get("sip_monthly_inr", 3000), 3000.0)
+    horizon = int(max(0, _safe_number(state.get("investment_horizon_years", 15), 15.0)))
+    target = _safe_number(state.get("target_corpus_inr", 1_00_00_000), 1_00_00_000.0)
+    mf_value = _safe_number(state.get("mutual_fund_value_inr", 0), 0.0)
 
     projected = _project_corpus(total_value, sip, horizon)
+    if not math.isfinite(projected):
+        projected = 0.0
     ratio = projected / max(target, 1)
+    ratio = clamp(ratio, 0.0, 10.0)
 
     if ratio >= 1.0:
         primary = 1.00
@@ -179,11 +224,11 @@ def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
     mf_bonus = clamp(0.05 * min(mf_ratio / 0.3, 1.0))
 
     # Diversification bonus
-    sector = portfolio_state.get("sector_exposure", {})
-    it = sector.get("IT", 1.0)
+    sector = _safe_mapping(state.get("sector_exposure", {}))
+    it = _safe_number(sector.get("IT", 1.0), 1.0)
     diversification_bonus = 0.05 if it < 0.35 else 0.0
 
-    final_score = clamp_strict_score(clamp(primary + sip_bonus + mf_bonus + diversification_bonus))
+    final_score = strict_score(clamp(primary + sip_bonus + mf_bonus + diversification_bonus))
     explanation = (
         f"Projected corpus=₹{projected:,.0f} vs target=₹{target:,.0f} ({ratio:.1%}). "
         f"SIP=₹{sip:,}/mo (bonus={sip_bonus:.2f}). "
@@ -210,7 +255,8 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
     Each sub-score: 0.0–1.0 with partial progress.
     """
     # 1. Capital preservation: reward stopping the bleeding
-    drawdown = portfolio_state.get("max_drawdown", 0.18)
+    state = _safe_mapping(portfolio_state)
+    drawdown = _safe_number(state.get("max_drawdown", 0.18), 0.18)
     if drawdown <= 0.08:
         preservation_score = 1.0
     elif drawdown <= 0.12:
@@ -223,7 +269,7 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
         preservation_score = max(0.0, 1.0 - (drawdown / 0.40))
 
     # 2. Liquidity: need ₹2,00,000 cash for home loan
-    cash = portfolio_state.get("cash_inr", 25_000)
+    cash = _safe_number(state.get("cash_inr", 25_000), 25_000.0)
     liquidity_target = 2_00_000
     if cash >= liquidity_target:
         liquidity_score = 1.0
@@ -237,8 +283,8 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
         liquidity_score = clamp(cash / liquidity_target)
 
     # 3. Banking sector reduction: from 45% → target <25%
-    sector = portfolio_state.get("sector_exposure", {})
-    banking = sector.get("Banking", 0.45)
+    sector = _safe_mapping(state.get("sector_exposure", {}))
+    banking = _safe_number(sector.get("Banking", 0.45), 0.45)
     if banking <= 0.20:
         banking_score = 1.0
     elif banking <= 0.25:
@@ -251,7 +297,7 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
         banking_score = max(0.0, 1.0 - (banking - 0.25) / 0.20)
 
     # Weighted composite
-    final_score = clamp_strict_score(clamp(
+    final_score = strict_score(clamp(
         preservation_score * 0.40
         + liquidity_score * 0.35
         + banking_score * 0.25
@@ -290,37 +336,44 @@ def compute_step_reward(
              - cash_depletion_penalty
     """
     # ── diversification improvement ──
-    prev_it = prev_state.get("sector_exposure", {}).get("IT", 0.5)
-    curr_it = curr_state.get("sector_exposure", {}).get("IT", 0.5)
+    prev_state = _safe_mapping(prev_state)
+    curr_state = _safe_mapping(curr_state)
+    prev_sector = _safe_mapping(prev_state.get("sector_exposure", {}))
+    curr_sector = _safe_mapping(curr_state.get("sector_exposure", {}))
+
+    prev_it = _safe_number(prev_sector.get("IT", 0.5), 0.5)
+    curr_it = _safe_number(curr_sector.get("IT", 0.5), 0.5)
     it_reduction = prev_it - curr_it  # positive = improvement
     diversification_delta = clamp(it_reduction * 2.0, -0.5, 0.5)
 
     # ── corpus growth ──
-    prev_progress = prev_state.get("goal_progress", 0.0)
-    curr_progress = curr_state.get("goal_progress", 0.0)
+    prev_progress = _safe_number(prev_state.get("goal_progress", 0.0), 0.0)
+    curr_progress = _safe_number(curr_state.get("goal_progress", 0.0), 0.0)
     corpus_growth_delta = clamp((curr_progress - prev_progress) * 5.0, -0.5, 0.5)
 
     # ── risk reduction ──
-    prev_risk = prev_state.get("risk_score", 0.5)
-    curr_risk = curr_state.get("risk_score", 0.5)
+    prev_risk = _safe_number(prev_state.get("risk_score", 0.5), 0.5)
+    curr_risk = _safe_number(curr_state.get("risk_score", 0.5), 0.5)
     risk_reduction_delta = clamp((prev_risk - curr_risk) * 2.0, -0.3, 0.3)
 
     # ── liquidity improvement ──
-    prev_cash = prev_state.get("cash_inr", 0)
-    curr_cash = curr_state.get("cash_inr", 0)
+    prev_cash = _safe_number(prev_state.get("cash_inr", 0), 0.0)
+    curr_cash = _safe_number(curr_state.get("cash_inr", 0), 0.0)
     liquidity_delta = clamp((curr_cash - prev_cash) / 2_00_000, -0.3, 0.3)
 
     # ── penalties ──
     # Overconcentration: penalise if any sector > 60%
-    sector = curr_state.get("sector_exposure", {})
-    max_sector = max(sector.values()) if sector else 0.0
+    sector = curr_sector
+    sector_values = [_safe_number(v, 0.0) for v in sector.values()]
+    max_sector = max(sector_values) if sector_values else 0.0
     overconcentration_penalty = 0.15 if max_sector > 0.60 else (0.05 if max_sector > 0.50 else 0.0)
 
     # Churn: penalise selling AND buying same asset class in same step
     churn_penalty = 0.05 if action_type in ("sell_stock", "buy_stock") else 0.0
 
     # Cash depletion: penalise going below ₹20,000 cash
-    cash_depletion_penalty = 0.10 if curr_state.get("cash_inr", 0) < 20_000 else 0.0
+    current_cash_for_penalty = _safe_number(curr_state.get("cash_inr", 0), 0.0)
+    cash_depletion_penalty = 0.10 if current_cash_for_penalty < 20_000 else 0.0
 
     # ── composite reward ──
     reward = (
@@ -352,14 +405,16 @@ def compute_step_reward(
 # ─────────────────────────────────────────────────────────────
 
 def grade_task(task_name: str, portfolio_state: Dict) -> Tuple[float, str]:
+    state = _safe_mapping(portfolio_state)
     if task_name == "diversify_sector_easy":
-        score, explanation = grade_diversify_sector(portfolio_state)
+        score, explanation = grade_diversify_sector(state)
     elif task_name == "retirement_goal_medium":
-        score, explanation = grade_retirement_goal(portfolio_state)
+        score, explanation = grade_retirement_goal(state)
     elif task_name == "crash_protection_hard":
-        score, explanation = grade_crash_protection(portfolio_state)
+        score, explanation = grade_crash_protection(state)
     else:
-        raise ValueError(f"Unknown task: {task_name}")
+        score = STRICT_SCORE_NONFINITE_FALLBACK
+        explanation = f"Unknown task: {task_name}. Applied fallback score."
 
-    score = clamp_strict_score(score)
+    score = strict_score(score)
     return score, explanation
