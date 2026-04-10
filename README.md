@@ -110,7 +110,7 @@ Step output model: StepResult
 
 Each task has a deterministic grader in graders.py that:
 
-- returns score in [0.0, 1.0]
+- returns score in [0,1]
 - provides partial progress scoring
 - is reproducible for the same state input
 
