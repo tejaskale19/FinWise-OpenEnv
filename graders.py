@@ -17,15 +17,24 @@ def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, value))
 
 
+STRICT_SCORE_MIN = 0.001
+STRICT_SCORE_MAX = 0.999
+
+
+def clamp_strict_score(score: float) -> float:
+    """Clamp task scores to strict OpenEnv bounds: 0 < score < 1."""
+    return max(STRICT_SCORE_MIN, min(STRICT_SCORE_MAX, float(score)))
+
+
 def linear_score(current: float, target: float, worst: float) -> float:
     """
     Returns 1.0 when current == target, 0.0 when current == worst.
     Interpolates linearly between.
     """
     if abs(worst - target) < 1e-9:
-        return 1.0
+        return clamp_strict_score(1.0)
     score = 1.0 - abs(current - target) / abs(worst - target)
-    return clamp(score)
+    return clamp_strict_score(clamp(score))
 
 
 # ─────────────────────────────────────────────────────────────
@@ -87,12 +96,11 @@ def grade_diversify_sector(portfolio_state: Dict) -> Tuple[float, str]:
     mf_ratio = mf_value / max(total, 1)
     mf_bonus = clamp(0.05 * (mf_ratio / 0.2))  # up to 0.05 bonus if 20% in MF
 
-    final_score = clamp(primary + diversity_bonus + mf_bonus)
-    final_score = max(0.01, min(0.99, final_score))
+    final_score = clamp_strict_score(clamp(primary + diversity_bonus + mf_bonus))
     explanation = (
         f"IT exposure={it_weight:.1%} ({label}). "
         f"Diversity bonus={diversity_bonus:.2f}. MF bonus={mf_bonus:.2f}. "
-        f"Final score={final_score:.2f}"
+        f"Final score={final_score:.3f}"
     )
     return final_score, explanation
 
@@ -175,13 +183,12 @@ def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
     it = sector.get("IT", 1.0)
     diversification_bonus = 0.05 if it < 0.35 else 0.0
 
-    final_score = clamp(primary + sip_bonus + mf_bonus + diversification_bonus)
-    final_score = max(0.01, min(0.99, final_score))
+    final_score = clamp_strict_score(clamp(primary + sip_bonus + mf_bonus + diversification_bonus))
     explanation = (
         f"Projected corpus=₹{projected:,.0f} vs target=₹{target:,.0f} ({ratio:.1%}). "
         f"SIP=₹{sip:,}/mo (bonus={sip_bonus:.2f}). "
         f"MF bonus={mf_bonus:.2f}. Diversity bonus={diversification_bonus:.2f}. "
-        f"Final score={final_score:.2f}"
+        f"Final score={final_score:.3f}"
     )
     return final_score, explanation
 
@@ -244,18 +251,17 @@ def grade_crash_protection(portfolio_state: Dict) -> Tuple[float, str]:
         banking_score = max(0.0, 1.0 - (banking - 0.25) / 0.20)
 
     # Weighted composite
-    final_score = clamp(
+    final_score = clamp_strict_score(clamp(
         preservation_score * 0.40
         + liquidity_score * 0.35
         + banking_score * 0.25
-    )
-    final_score = max(0.01, min(0.99, final_score))
+    ))
 
     explanation = (
         f"Capital preservation: drawdown={drawdown:.1%} → score={preservation_score:.2f} (w=0.40). "
         f"Liquidity: cash=₹{cash:,} → score={liquidity_score:.2f} (w=0.35). "
         f"Banking reduction: {banking:.1%} → score={banking_score:.2f} (w=0.25). "
-        f"Final score={final_score:.2f}"
+        f"Final score={final_score:.3f}"
     )
     return final_score, explanation
 
@@ -355,5 +361,5 @@ def grade_task(task_name: str, portfolio_state: Dict) -> Tuple[float, str]:
     else:
         raise ValueError(f"Unknown task: {task_name}")
 
-    score = max(0.01, min(0.99, float(score)))
+    score = clamp_strict_score(score)
     return score, explanation

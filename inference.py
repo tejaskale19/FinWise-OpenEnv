@@ -24,6 +24,7 @@ from typing import List, Optional, Tuple
 from openai import OpenAI
 
 from finwise_env.env import FinWiseEnv
+from finwise_env.graders import clamp_strict_score
 from finwise_env.models import PortfolioAction
 from finwise_env.tasks import ALL_TASK_NAMES
 
@@ -44,7 +45,7 @@ SUCCESS_SCORE_THRESHOLD = 0.70
 
 
 def _clamp_final_score(score: float) -> float:
-    return max(0.01, min(0.99, float(score)))
+    return clamp_strict_score(score)
 
 
 # ─────────────────────────────────────────────
@@ -217,7 +218,7 @@ def run_task(client: OpenAI, task_name: str) -> float:
 
     rewards: List[float] = []
     steps_taken = 0
-    score = 0.01
+    score = 0.001
     success = False
     result = None
 
@@ -258,10 +259,11 @@ def run_task(client: OpenAI, task_name: str) -> float:
 
         # Compute final score from terminal grader
         if result and result.info:
-            score = result.info.get("terminal_score", 0.01)
+            score = result.info.get("terminal_score", 0.001)
+            score = _clamp_final_score(score)
             success = bool(result.info.get("task_success", score >= SUCCESS_SCORE_THRESHOLD))
         else:
-            score = 0.01
+            score = 0.001
             success = False
         score = _clamp_final_score(score)
 

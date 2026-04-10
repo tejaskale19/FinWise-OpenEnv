@@ -2,6 +2,7 @@
 
 from graders import (
     clamp,
+    clamp_strict_score,
     linear_score,
     grade_diversify_sector,
     grade_retirement_goal,
@@ -12,6 +13,7 @@ from graders import (
 
 __all__ = [
     "clamp",
+    "clamp_strict_score",
     "linear_score",
     "grade_diversify_sector",
     "grade_retirement_goal",
