@@ -23,9 +23,10 @@ def clamp(value: float, lo: float = 0.0, hi: float = 1.0) -> float:
     return max(lo, min(hi, numeric))
 
 
-STRICT_SCORE_MIN = 0.001
-STRICT_SCORE_MAX = 0.999
+STRICT_SCORE_MIN = 0.005
+STRICT_SCORE_MAX = 0.995
 STRICT_SCORE_NONFINITE_FALLBACK = 0.5
+ZERO_FALLBACK = float(0)
 
 
 def _safe_mapping(value: object) -> Dict:
@@ -51,6 +52,11 @@ def strict_score(score: float) -> float:
     if not math.isfinite(numeric):
         return STRICT_SCORE_NONFINITE_FALLBACK
     return max(STRICT_SCORE_MIN, min(STRICT_SCORE_MAX, numeric))
+
+
+def safe_score(raw_score: float) -> float:
+    """Compatibility alias for strict open-interval score clamping."""
+    return strict_score(raw_score)
 
 
 def clamp_strict_score(score: float) -> float:
@@ -158,19 +164,35 @@ def _project_corpus(
     months = years * 12
     monthly_rate = annual_return / 12
 
-    # FV of existing lump sum
-    lump_fv = current_value * ((1 + annual_return) ** years)
+    try:
+        # FV of existing lump sum — protect from OverflowError
+        if years > 0 and annual_return > 0:
+            # Cap exponent to prevent overflow: (1.12 ** 500) already overflows
+            if years > 300:
+                return ZERO_FALLBACK
+            lump_fv = current_value * ((1 + annual_return) ** years)
+            if not math.isfinite(lump_fv):
+                return ZERO_FALLBACK
+        else:
+            lump_fv = current_value
 
-    # FV of SIP stream
-    if monthly_rate > 0:
-        sip_fv = monthly_sip * (((1 + monthly_rate) ** months - 1) / monthly_rate) * (1 + monthly_rate)
-    else:
-        sip_fv = monthly_sip * months
+        # FV of SIP stream
+        if monthly_rate > 0:
+            if months > 5000:  # Prevent SIP formula overflow
+                return ZERO_FALLBACK
+            sip_fv = monthly_sip * (((1 + monthly_rate) ** months - 1) / monthly_rate) * (1 + monthly_rate)
+            if not math.isfinite(sip_fv):
+                return ZERO_FALLBACK
+        else:
+            sip_fv = monthly_sip * months
 
-    result = lump_fv + sip_fv
-    if not math.isfinite(result):
-        return 0.0
-    return result
+        result = lump_fv + sip_fv
+        if not math.isfinite(result):
+            return ZERO_FALLBACK
+        return result
+    except (OverflowError, ValueError):
+        # Overflow or computation error — return safe default
+        return ZERO_FALLBACK
 
 
 def grade_retirement_goal(portfolio_state: Dict) -> Tuple[float, str]:
@@ -385,7 +407,8 @@ def compute_step_reward(
         - churn_penalty
         - cash_depletion_penalty
     )
-    reward = clamp(reward, -1.0, 1.0)
+    # !! CRITICAL: Clamp reward to STRICT bounds (0, 1), not just [-1, 1]
+    reward = strict_score(reward)
 
     breakdown = {
         "diversification_delta": round(diversification_delta, 3),
