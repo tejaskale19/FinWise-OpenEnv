@@ -6,6 +6,8 @@ colorTo: green
 sdk: docker
 app_file: app.py
 pinned: false
+tags:
+	- openenv
 ---
 
 # FinWise OpenEnv
@@ -58,6 +60,7 @@ HTTP API endpoints exposed for deployment:
 - POST /reset
 - POST /step
 - POST /state
+- GET /state
 - GET /health
 
 ## Typed Schemas
@@ -148,7 +151,7 @@ Expected structured logs:
 
 - [START] task=... env=... model=...
 - [STEP] step=... action=... reward=... done=true|false error=...
-- [END] success=true|false steps=... rewards=...
+- [END] success=true|false steps=... score=... rewards=...
 
 ## Expected Baseline Scores
 
@@ -189,6 +192,7 @@ docker run -p 7860:7860 -e HF_TOKEN=YOUR_TOKEN_HERE -e MODEL_NAME=Qwen/Qwen2.5-7
 - POST /reset
 - POST /step
 - POST /state
+- GET /state
 
 ## Validation Commands
 

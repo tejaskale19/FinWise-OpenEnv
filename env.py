@@ -355,15 +355,34 @@ class FinWiseEnv:
         p["goal_progress"] = max(0.0, min(1.0, projected / max(target, 1)))
 
     def _project_corpus(self, current: float, monthly_sip: float, years: int) -> float:
-        months = years * 12
-        annual_r = 0.12
-        monthly_r = annual_r / 12
-        lump_fv = current * ((1 + annual_r) ** years)
-        if monthly_r > 0:
-            sip_fv = monthly_sip * (((1 + monthly_r) ** months - 1) / monthly_r) * (1 + monthly_r)
-        else:
-            sip_fv = monthly_sip * months
-        return lump_fv + sip_fv
+        try:
+            years = int(max(0, years))
+            if years > 300:  # Prevent overflow
+                return 0.0
+            
+            months = years * 12
+            annual_r = 0.12
+            monthly_r = annual_r / 12
+            
+            lump_fv = current * ((1 + annual_r) ** years)
+            if not math.isfinite(lump_fv):
+                return 0.0
+            
+            if monthly_r > 0:
+                if months > 5000:  # Prevent overflow
+                    return 0.0
+                sip_fv = monthly_sip * (((1 + monthly_r) ** months - 1) / monthly_r) * (1 + monthly_r)
+                if not math.isfinite(sip_fv):
+                    return 0.0
+            else:
+                sip_fv = monthly_sip * months
+            
+            result = lump_fv + sip_fv
+            if not math.isfinite(result):
+                return 0.0
+            return result
+        except (OverflowError, ValueError):
+            return 0.0
 
     # ─────────────────────────────────────────────
     # Internal: build observation model

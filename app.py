@@ -184,6 +184,12 @@ async def state(request: StateRequest):
     return {"session_id": request.session_id, "state": env.state()}
 
 
+@app.get("/state")
+async def state_get(session_id: str):
+    """Compatibility GET endpoint for environments that call GET /state."""
+    return await state(StateRequest(session_id=session_id))
+
+
 # ─────────────────────────────────────────────
 # Entrypoint
 # ─────────────────────────────────────────────
